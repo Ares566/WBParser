@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
+	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 	"math/rand"
 	"time"
 )
 
 type CategoryScraper struct {
 	urls  []string
-	Сards []ProductCard // пул для вставки в БД
+	Cards []ProductCard // пул для вставки в БД
 }
 
 func NewCategoryScraper(_urls []string) *CategoryScraper {
@@ -19,6 +21,7 @@ func NewCategoryScraper(_urls []string) *CategoryScraper {
 }
 
 func (c *CategoryScraper) process(ctx context.Context) {
+	g, ctx := errgroup.WithContext(ctx)
 
 	for _, url := range c.urls {
 
@@ -26,16 +29,22 @@ func (c *CategoryScraper) process(ctx context.Context) {
 		rand.Seed(time.Now().UnixNano())
 		randomSleep := 5 + rand.Intn(20)
 		time.Sleep(time.Duration(randomSleep) * time.Second)
+		g.Go(func() error {
+			return c.task(ctx, "https://www.wildberries.ru"+url)
+		})
 
-		go c.task(ctx, "https://www.wildberries.ru"+url)
+	}
+	err := g.Wait()
+	if err != nil {
+		log.Error().Err(err).Msg("Error while category scraping")
 	}
 }
 
 //TODO добавить пул воркеров
-func (c *CategoryScraper) task(ctx context.Context, url string) {
+func (c *CategoryScraper) task(ctx context.Context, url string) (err error) {
 
 	// ждем загрузки страницы
-	err := chromedp.Run(
+	err = chromedp.Run(
 		ctx,
 		RunWithTimeOut(&ctx, 30, chromedp.Tasks{
 			chromedp.Navigate(url),
@@ -44,7 +53,7 @@ func (c *CategoryScraper) task(ctx context.Context, url string) {
 		}),
 	)
 	if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
-		fmt.Printf("%s", err)
+		return
 	}
 
 	var productCardNodes []*cdp.Node
@@ -57,14 +66,20 @@ func (c *CategoryScraper) task(ctx context.Context, url string) {
 		}),
 	)
 	if err != nil { //&& err != context.Canceled && err != context.DeadlineExceeded
-		fmt.Printf("%s", err)
+		return
 	}
 	fmt.Printf("Category %s\n", url)
+	lenPrice := len(productPrice)
 	for i, node := range productCardNodes {
 		u := node.AttributeValue("href")
 		//TODO тут может быть index out of range переделать на dom.RequestChildNodes от productCardNodes
-		price := productPrice[i].Children[0].NodeValue
+		var price string
+		if i < lenPrice {
+			price = productPrice[i].Children[0].NodeValue
+		}
+
 		fmt.Printf("href = %s Price=%s\n", u, price)
 	}
 
+	return
 }

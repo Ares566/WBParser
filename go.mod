@@ -8,6 +8,7 @@ require (
 	github.com/chromedp/chromedp v0.8.6
 	github.com/gocarina/gocsv v0.0.0-20210516172204-ca9e8a8ddea8
 	github.com/rs/zerolog v1.28.0
+	golang.org/x/sync v0.1.0
 )
 
 require (
